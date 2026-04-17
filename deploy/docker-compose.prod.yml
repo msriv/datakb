@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  datakb:
+    image: ghcr.io/datakb/datakb:latest
+    ports:
+      - "8000:8000"
+    environment:
+      DATAKB_SECRET_KEY: "${DATAKB_SECRET_KEY}"
+      AUTH_MODE: google
+      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
+      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET}"
+      GOOGLE_ALLOWED_DOMAIN: "${GOOGLE_ALLOWED_DOMAIN}"
+      DATABASE_URL: "postgresql+asyncpg://datakb:${DB_PASS}@db:5432/datakb"
+      STORAGE_BACKEND: gcs
+      STORAGE_GCS_BUCKET: "${GCS_BUCKET}"
+      STORAGE_GCS_PREFIX: "notebooks/"
+      SECRETS_DIR: /secrets
+    volumes:
+      - ./secrets:/secrets:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: datakb
+      POSTGRES_USER: datakb
+      POSTGRES_PASSWORD: "${DB_PASS}"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U datakb"]
+      interval: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata:

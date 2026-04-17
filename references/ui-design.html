@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>DataKB — Knowledge Graph</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Syne:wght@400;500;600;700;800&display=swap"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg0:#0a0c0f;
+  --bg1:#0f1117;
+  --bg2:#151820;
+  --bg3:#1c2030;
+  --bg4:#232840;
+  --border:#2a3050;
+  --border2:#3a4570;
+  --text0:#e8ecf8;
+  --text1:#a8b4d0;
+  --text2:#5a6a90;
+  --text3:#3a4a70;
+  --accent:#4d7cff;
+  --accent2:#2a4fcc;
+  --green:#2dd4a0;
+  --amber:#f5a623;
+  --coral:#ff6b6b;
+  --teal:#38bdf8;
+  --purple:#a78bfa;
+  --pink:#f472b6;
+  --mono:'JetBrains Mono',monospace;
+  --sans:'Syne',sans-serif;
+}
+html,body{height:100%;overflow:hidden;background:var(--bg0);color:var(--text0);font-family:var(--mono);font-size:13px}
+
+/* ── App shell ── */
+#app{display:flex;height:100vh;width:100vw}
+
+/* ── Sidebar ── */
+#sidebar{
+  width:52px;min-width:52px;
+  background:var(--bg1);
+  border-right:1px solid var(--border);
+  display:flex;flex-direction:column;align-items:center;
+  padding:12px 0;gap:4px;z-index:30;
+}
+.logo-mark{
+  width:32px;height:32px;border-radius:8px;
+  background:var(--accent);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--sans);font-weight:800;font-size:14px;color:#fff;
+  margin-bottom:8px;letter-spacing:-1px;
+}
+.sbi{
+  width:36px;height:36px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;color:var(--text2);
+  border:1px solid transparent;
+  transition:all .15s;
+}
+.sbi:hover{color:var(--text0);background:var(--bg3);border-color:var(--border)}
+.sbi.active{color:var(--accent);background:rgba(77,124,255,.1);border-color:rgba(77,124,255,.3)}
+.sbi svg{width:16px;height:16px;stroke-width:1.8}
+.sbi-div{width:24px;height:1px;background:var(--border);margin:4px 0}
+.sbi-user{
+  margin-top:auto;width:30px;height:30px;border-radius:50%;
+  background:var(--bg4);border:1.5px solid var(--border2);
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:700;color:var(--accent);
+  cursor:pointer;font-family:var(--sans);
+}
+
+/* ── Main ── */
+#main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+
+/* ── Topbar ── */
+#topbar{
+  height:44px;background:var(--bg1);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 16px;gap:10px;flex-shrink:0;
+}
+.tb-logo{font-family:var(--sans);font-size:15px;font-weight:700;color:var(--text0);letter-spacing:-.5px}
+.tb-logo em{color:var(--accent);font-style:normal}
+.tb-sep{width:1px;height:20px;background:var(--border);margin:0 2px}
+.tb-crumb{font-size:12px;color:var(--text2)}
+.tb-search{flex:1;max-width:300px;position:relative;margin-left:4px}
+.tb-search input{
+  width:100%;background:var(--bg2);border:1px solid var(--border);
+  border-radius:6px;padding:5px 10px 5px 30px;
+  color:var(--text0);font-family:var(--mono);font-size:12px;outline:none;
+  transition:border-color .15s;
+}
+.tb-search input:focus{border-color:var(--accent)}
+.tb-search input::placeholder{color:var(--text3)}
+.tb-search-ic{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--text3);pointer-events:none}
+.tb-search-ic svg{width:13px;height:13px;stroke-width:2}
+.filter-row{display:flex;align-items:center;gap:5px}
+.fpill{
+  padding:3px 10px;border-radius:100px;
+  border:1px solid var(--border);color:var(--text2);
+  font-size:11px;cursor:pointer;transition:all .15s;
+  font-family:var(--mono);white-space:nowrap;
+}
+.fpill:hover{border-color:var(--border2);color:var(--text1)}
+.fpill.on{border-color:var(--accent);color:var(--accent);background:rgba(77,124,255,.08)}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.btn{
+  padding:5px 12px;border-radius:6px;border:1px solid var(--border);
+  background:var(--bg2);color:var(--text1);font-family:var(--mono);
+  font-size:12px;cursor:pointer;transition:all .15s;
+  display:inline-flex;align-items:center;gap:5px;white-space:nowrap;
+}
+.btn:hover{border-color:var(--border2);color:var(--text0)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:var(--accent2);border-color:var(--accent2)}
+.btn.run{background:rgba(45,212,160,.12);border-color:rgba(45,212,160,.3);color:var(--green)}
+.btn.run:hover{background:rgba(45,212,160,.2)}
+.btn svg{width:12px;height:12px;stroke-width:2}
+.btn-icon{width:30px;height:30px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);transition:all .15s}
+.btn-icon:hover{border-color:var(--border2);color:var(--text0)}
+.btn-icon svg{width:14px;height:14px;stroke-width:1.8}
+
+/* ── Content ── */
+#content{flex:1;position:relative;overflow:hidden}
+
+/* ═══════════════════════════════════
+   GRAPH VIEW
+══════════════════════════════════ */
+#graph-view{position:absolute;inset:0;display:flex}
+#canvas-wrap{flex:1;position:relative;overflow:hidden;background:var(--bg0)}
+.grid-bg{
+  position:absolute;inset:0;
+  background-image:
+    linear-gradient(var(--bg1) 1px,transparent 1px),
+    linear-gradient(90deg,var(--bg1) 1px,transparent 1px);
+  background-size:32px 32px;
+  opacity:.35;
+}
+#edges-svg{position:absolute;inset:0;overflow:visible;pointer-events:none}
+#nodes-layer{position:absolute;inset:0}
+
+/* Node cards */
+.gnode{position:absolute;cursor:pointer;transition:opacity .2s}
+.gnode.dimmed{opacity:.2}
+.nc{
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:10px;padding:10px 12px 10px;min-width:158px;
+  transition:border-color .15s,box-shadow .15s;
+  position:relative;overflow:hidden;
+}
+.nc::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2.5px;
+}
+.nt-service .nc::before{background:var(--accent)}
+.nt-pipeline .nc::before{background:var(--teal)}
+.nt-database .nc::before{background:var(--purple)}
+.nt-redis .nc::before{background:var(--coral)}
+.nt-gcs_bucket .nc::before{background:var(--amber)}
+.nt-schema .nc::before{background:var(--text2)}
+.nt-note .nc::before{background:var(--green)}
+.gnode:hover .nc{border-color:var(--border2)}
+.gnode.sel .nc{
+  border-color:var(--accent);
+  box-shadow:0 0 0 1px var(--accent),0 0 20px rgba(77,124,255,.12);
+}
+.n-head{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+.n-ico{
+  width:22px;height:22px;border-radius:5px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;flex-shrink:0;
+}
+.nt-service .n-ico{background:rgba(77,124,255,.15);color:var(--accent)}
+.nt-pipeline .n-ico{background:rgba(56,189,248,.15);color:var(--teal)}
+.nt-database .n-ico{background:rgba(167,139,250,.15);color:var(--purple)}
+.nt-redis .n-ico{background:rgba(255,107,107,.15);color:var(--coral)}
+.nt-gcs_bucket .n-ico{background:rgba(245,166,35,.15);color:var(--amber)}
+.nt-schema .n-ico{background:rgba(90,106,144,.15);color:var(--text1)}
+.nt-note .n-ico{background:rgba(45,212,160,.15);color:var(--green)}
+.n-title{font-size:12px;font-weight:600;color:var(--text0);font-family:var(--sans);line-height:1.3}
+.n-team{font-size:10px;color:var(--text3);margin-bottom:6px}
+.n-tags{display:flex;gap:3px;flex-wrap:wrap}
+.n-tag{padding:1px 6px;border-radius:3px;background:var(--bg3);border:1px solid var(--border);font-size:10px;color:var(--text2)}
+.n-dot{position:absolute;top:9px;right:9px;width:7px;height:7px;border-radius:50%}
+.n-dot.has-nb{background:var(--border2)}
+.n-dot.active{background:var(--green);animation:glow 1.6s ease-in-out infinite}
+@keyframes glow{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(45,212,160,.4)}50%{opacity:.7;box-shadow:0 0 0 4px rgba(45,212,160,0)}}
+
+/* Graph chrome */
+.graph-info{
+  position:absolute;bottom:14px;left:14px;
+  display:flex;gap:8px;
+}
+.gstat{
+  padding:4px 10px;background:var(--bg2);border:1px solid var(--border);
+  border-radius:6px;font-size:11px;color:var(--text2);
+  display:flex;align-items:center;gap:5px;
+}
+.gstat b{color:var(--text0);font-weight:500}
+.gstat.live{border-color:rgba(45,212,160,.25);color:var(--green)}
+.minimap{
+  position:absolute;bottom:14px;right:14px;
+  width:120px;height:72px;background:var(--bg2);
+  border:1px solid var(--border);border-radius:7px;overflow:hidden;
+}
+.mm-node{position:absolute;border-radius:2px;opacity:.65}
+
+/* Legend */
+.legend{
+  position:absolute;top:14px;left:14px;
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:5px;
+}
+.legend-row{display:flex;align-items:center;gap:7px;font-size:10px;color:var(--text2)}
+.legend-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+
+/* ═══════════════════════════════════
+   DETAIL PANEL
+══════════════════════════════════ */
+#panel{
+  width:310px;min-width:310px;
+  background:var(--bg1);border-left:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden;
+  transform:translateX(100%);
+  transition:transform .22s cubic-bezier(.4,0,.2,1);
+  position:absolute;right:0;top:0;bottom:0;z-index:10;
+}
+#panel.open{transform:translateX(0)}
+.p-head{
+  padding:14px 16px;border-bottom:1px solid var(--border);
+  display:flex;align-items:flex-start;gap:10px;flex-shrink:0;
+}
+.p-ico{
+  width:38px;height:38px;border-radius:9px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:18px;flex-shrink:0;
+}
+.p-meta{flex:1;min-width:0}
+.p-title{font-family:var(--sans);font-size:15px;font-weight:700;color:var(--text0);line-height:1.3;margin-bottom:4px}
+.p-badges{display:flex;align-items:center;gap:6px}
+.badge{padding:2px 8px;border-radius:4px;font-size:10px;font-family:var(--mono);border:1px solid}
+.p-close{
+  width:24px;height:24px;border-radius:5px;background:var(--bg3);
+  border:1px solid var(--border);display:flex;align-items:center;
+  justify-content:center;cursor:pointer;color:var(--text2);
+  flex-shrink:0;transition:all .15s;
+}
+.p-close:hover{color:var(--text0);border-color:var(--border2)}
+.p-close svg{width:11px;height:11px;stroke-width:2.5}
+.p-body{flex:1;overflow-y:auto;padding:14px 16px}
+.p-body::-webkit-scrollbar{width:3px}
+.p-body::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.p-sec{margin-bottom:18px}
+.p-sec-label{
+  font-size:10px;color:var(--text2);letter-spacing:.08em;
+  text-transform:uppercase;margin-bottom:8px;
+}
+.p-desc{font-size:12px;color:var(--text1);line-height:1.65}
+.p-kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:11px}
+.p-k{color:var(--text2)}
+.p-v{color:var(--text0);font-family:var(--mono);word-break:break-all;font-size:10px}
+.p-rel{
+  padding:7px 10px;background:var(--bg2);border:1px solid var(--border);
+  border-radius:7px;margin-bottom:5px;display:flex;align-items:center;
+  gap:7px;cursor:pointer;transition:border-color .15s;
+}
+.p-rel:hover{border-color:var(--border2)}
+.p-rel-dir{font-size:10px;color:var(--text3);min-width:44px;font-family:var(--mono)}
+.p-rel-lbl{
+  font-size:10px;padding:1px 6px;border-radius:3px;
+  background:var(--bg3);border:1px solid var(--border);color:var(--text1);
+  white-space:nowrap;
+}
+.p-rel-target{font-size:12px;color:var(--text0);margin-left:auto;font-family:var(--sans);font-weight:500}
+.p-tags{display:flex;flex-wrap:wrap;gap:5px}
+.p-tag{padding:2px 8px;border-radius:4px;background:var(--bg2);border:1px solid var(--border);font-size:11px;color:var(--text1)}
+.p-run-info{
+  padding:8px 10px;background:rgba(45,212,160,.05);
+  border:1px solid rgba(45,212,160,.15);border-radius:7px;
+  font-size:11px;color:var(--text1);
+}
+.p-run-info span{color:var(--green)}
+.p-foot{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0}
+
+/* ═══════════════════════════════════
+   NOTEBOOK VIEW
+══════════════════════════════════ */
+#notebook-view{
+  position:absolute;inset:0;
+  background:var(--bg0);display:none;flex-direction:column;
+}
+#notebook-view.vis{display:flex}
+.nb-bar{
+  height:44px;background:var(--bg1);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 14px;gap:10px;flex-shrink:0;
+}
+.nb-back{
+  display:flex;align-items:center;gap:4px;
+  color:var(--text2);font-size:12px;cursor:pointer;
+  padding:4px 8px;border-radius:5px;border:1px solid transparent;
+  transition:all .15s;
+}
+.nb-back:hover{border-color:var(--border);color:var(--text1)}
+.nb-back svg{width:12px;height:12px;stroke-width:2.5}
+.nb-title{font-family:var(--sans);font-size:14px;font-weight:600;color:var(--text0)}
+.nb-save{font-size:11px;color:var(--text3)}
+.nb-body{flex:1;display:flex;overflow:hidden}
+
+/* Outline sidebar */
+.nb-outline{
+  width:200px;min-width:200px;border-right:1px solid var(--border);
+  background:var(--bg1);display:flex;flex-direction:column;overflow:hidden;
+}
+.nb-ol-hd{
+  padding:9px 12px;border-bottom:1px solid var(--border);
+  font-size:10px;color:var(--text2);letter-spacing:.08em;text-transform:uppercase;
+}
+.nb-ol-scroll{flex:1;overflow-y:auto;padding:6px}
+.nb-ol-scroll::-webkit-scrollbar{width:3px}
+.nb-ol-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.nb-oi{
+  padding:5px 8px;border-radius:5px;cursor:pointer;
+  border:1px solid transparent;font-size:11px;color:var(--text2);
+  margin-bottom:2px;transition:all .15s;display:flex;align-items:center;gap:6px;
+}
+.nb-oi:hover{background:var(--bg2);border-color:var(--border);color:var(--text1)}
+.nb-oi.active{background:var(--bg3);border-color:var(--border2);color:var(--text0)}
+.nb-oi-num{color:var(--text3);font-size:10px;min-width:28px}
+.nb-oi-type{
+  font-size:9px;padding:1px 5px;border-radius:3px;
+  background:var(--bg4);color:var(--text3);font-family:var(--mono);
+}
+
+/* Cells area */
+.nb-cells{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:10px}
+.nb-cells::-webkit-scrollbar{width:5px}
+.nb-cells::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* Session banner */
+.session-banner{
+  padding:8px 14px;background:rgba(45,212,160,.05);
+  border:1px solid rgba(45,212,160,.18);border-radius:8px;
+  display:flex;align-items:center;gap:10px;flex-shrink:0;
+}
+.s-pulse{width:7px;height:7px;border-radius:50%;background:var(--green);animation:glow 1.6s ease-in-out infinite;flex-shrink:0}
+.s-text{font-size:11px;color:var(--text1);flex:1}
+.s-text strong{color:var(--green)}
+.s-end{font-size:11px;color:var(--text2);padding:2px 8px;border-radius:4px;border:1px solid var(--border);cursor:pointer;transition:all .15s;flex-shrink:0}
+.s-end:hover{color:var(--coral);border-color:rgba(255,107,107,.4)}
+
+/* Individual cells */
+.cell{
+  background:var(--bg1);border:1px solid var(--border);
+  border-radius:9px;overflow:hidden;transition:border-color .15s;
+}
+.cell:hover{border-color:var(--border2)}
+.cell.focused{border-color:rgba(77,124,255,.5)}
+.ch{
+  padding:6px 12px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:8px;
+  background:rgba(255,255,255,.01);
+}
+.c-num{font-size:10px;color:var(--text3);min-width:28px;font-family:var(--mono)}
+.c-type{
+  font-size:10px;padding:1px 7px;border-radius:3px;
+  font-family:var(--mono);background:var(--bg3);
+  border:1px solid var(--border);color:var(--text2);
+}
+.c-run{
+  margin-left:auto;width:22px;height:22px;border-radius:4px;
+  background:var(--accent);border:none;color:#fff;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:all .15s;
+}
+.c-run:hover{background:var(--accent2)}
+.c-run svg{width:9px;height:9px}
+.cb{padding:11px 14px;font-size:12px;line-height:1.75}
+.code{font-family:var(--mono);color:var(--text1)}
+.kw{color:var(--purple)}
+.fn{color:var(--teal)}
+.st{color:var(--green)}
+.cm{color:var(--text3);font-style:italic}
+.nm{color:var(--amber)}
+.out{
+  border-top:1px solid var(--border);padding:10px 14px;background:var(--bg0);
+}
+.out-lbl{font-size:10px;color:var(--text3);margin-bottom:6px;font-family:var(--mono)}
+.out-txt{font-family:var(--mono);font-size:12px;color:var(--green);line-height:1.6}
+.out-err{font-family:var(--mono);font-size:12px;color:var(--coral);line-height:1.6}
+.out-df{width:100%;border-collapse:collapse;font-size:11px}
+.out-df th{padding:4px 10px;border-bottom:1px solid var(--border2);color:var(--text2);text-align:left;font-weight:500}
+.out-df td{padding:4px 10px;border-bottom:1px solid var(--border);color:var(--text1)}
+.out-df tr:last-child td{border-bottom:none}
+.out-df tr:hover td{background:var(--bg2)}
+.md-cell{font-family:var(--sans);color:var(--text0);line-height:1.7;padding:12px 14px}
+.md-cell h2{font-size:15px;font-weight:700;margin-bottom:6px}
+.md-cell p{font-size:13px;color:var(--text1)}
+.raw-cell{
+  font-family:var(--mono);color:var(--text2);
+  font-size:11px;line-height:1.6;padding:12px 14px;
+  background:rgba(255,255,255,.01);
+}
+
+/* ═══════════════════════════════════
+   SETTINGS VIEW
+══════════════════════════════════ */
+#settings-view{
+  position:absolute;inset:0;background:var(--bg0);display:none;flex-direction:column;
+}
+#settings-view.vis{display:flex}
+.st-body{flex:1;display:flex;overflow:hidden}
+.st-nav{
+  width:196px;min-width:196px;border-right:1px solid var(--border);
+  background:var(--bg1);padding:10px 8px;overflow-y:auto;
+}
+.st-nav-label{
+  font-size:10px;color:var(--text3);letter-spacing:.08em;
+  text-transform:uppercase;padding:4px 8px 8px;
+}
+.st-ni{
+  padding:7px 12px;border-radius:7px;cursor:pointer;
+  font-size:12px;color:var(--text2);display:flex;align-items:center;
+  gap:8px;margin-bottom:2px;border:1px solid transparent;transition:all .15s;
+}
+.st-ni:hover{color:var(--text1);background:var(--bg2)}
+.st-ni.active{color:var(--text0);background:var(--bg3);border-color:var(--border2)}
+.st-ni svg{width:14px;height:14px;flex-shrink:0;stroke-width:1.8}
+.st-main{flex:1;overflow-y:auto;padding:28px 32px}
+.st-main::-webkit-scrollbar{width:5px}
+.st-main::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+.st-h{font-family:var(--sans);font-size:20px;font-weight:700;color:var(--text0);margin-bottom:4px}
+.st-sub{font-size:12px;color:var(--text2);margin-bottom:22px;line-height:1.5}
+.st-toolbar{display:flex;gap:8px;align-items:center;margin-bottom:18px}
+.st-sel{
+  padding:6px 10px;background:var(--bg2);border:1px solid var(--border);
+  border-radius:6px;color:var(--text1);font-family:var(--mono);
+  font-size:12px;outline:none;cursor:pointer;
+}
+.st-sel:focus{border-color:var(--accent)}
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{
+  padding:8px 12px;border-bottom:1px solid var(--border);
+  font-size:10px;color:var(--text2);text-align:left;
+  letter-spacing:.08em;text-transform:uppercase;font-weight:500;
+}
+.tbl td{padding:10px 12px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text1)}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:var(--bg1)}
+.tbl-mono{font-family:var(--mono);font-size:11px;color:var(--text0)}
+.tbl-dim{font-size:11px;color:var(--text3)}
+.sb{padding:2px 8px;border-radius:4px;font-size:10px;font-family:var(--mono);border:1px solid}
+.sb-green{border-color:rgba(45,212,160,.35);color:var(--green);background:rgba(45,212,160,.06)}
+.sb-amber{border-color:rgba(245,166,35,.35);color:var(--amber);background:rgba(245,166,35,.06)}
+.sb-coral{border-color:rgba(255,107,107,.35);color:var(--coral);background:rgba(255,107,107,.06)}
+.sb-blue{border-color:rgba(77,124,255,.35);color:var(--accent);background:rgba(77,124,255,.06)}
+.sb-teal{border-color:rgba(56,189,248,.35);color:var(--teal);background:rgba(56,189,248,.06)}
+.sb-purple{border-color:rgba(167,139,250,.35);color:var(--purple);background:rgba(167,139,250,.06)}
+.sb-gray{border-color:var(--border2);color:var(--text2);background:var(--bg3)}
+.tbl-act{
+  font-size:11px;color:var(--text2);cursor:pointer;
+  padding:2px 7px;border-radius:4px;border:1px solid transparent;
+  transition:all .15s;font-family:var(--mono);
+}
+.tbl-act:hover{border-color:var(--border2);color:var(--text0)}
+.tbl-act.del:hover{border-color:rgba(255,107,107,.4);color:var(--coral)}
+
+/* ── Empty state ── */
+.empty{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:14px;
+}
+.empty-ic{
+  width:52px;height:52px;border-radius:14px;background:var(--bg2);
+  border:1px solid var(--border);display:flex;align-items:center;justify-content:center;
+}
+.empty-ic svg{width:24px;height:24px;color:var(--text3);stroke-width:1.5}
+.empty-title{font-family:var(--sans);font-size:16px;font-weight:600;color:var(--text1)}
+.empty-sub{font-size:12px;color:var(--text3);text-align:center;max-width:240px;line-height:1.6}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- ── Sidebar ── -->
+<div id="sidebar">
+  <div class="logo-mark">dK</div>
+  <div class="sbi active" id="sb-graph" onclick="nav('graph')" title="Knowledge graph">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><circle cx="4" cy="6" r="2"/><circle cx="20" cy="6" r="2"/><circle cx="4" cy="18" r="2"/><circle cx="20" cy="18" r="2"/><line x1="6" y1="7" x2="10" y2="11"/><line x1="18" y1="7" x2="14" y2="11"/><line x1="6" y1="17" x2="10" y2="13"/><line x1="18" y1="17" x2="14" y2="13"/></svg>
+  </div>
+  <div class="sbi" id="sb-notebook" onclick="nav('notebook')" title="Notebooks">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="3" width="16" height="18" rx="2"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="12" y2="16"/></svg>
+  </div>
+  <div class="sbi-div"></div>
+  <div class="sbi" id="sb-settings" onclick="nav('settings')" title="Settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </div>
+  <div class="sbi-user" title="alice@company.com">A</div>
+</div>
+
+<!-- ── Main ── -->
+<div id="main">
+
+  <!-- Topbar -->
+  <div id="topbar">
+    <div class="tb-logo">data<em>KB</em></div>
+    <div class="tb-sep"></div>
+    <div class="tb-crumb" id="tb-crumb">knowledge graph</div>
+    <div class="tb-search">
+      <div class="tb-search-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
+      <input type="text" placeholder="Search nodes, tags, teams…" id="search-input" oninput="doSearch(this.value)"/>
+    </div>
+    <div class="filter-row" id="filter-row">
+      <span style="font-size:11px;color:var(--text3)">type:</span>
+      <div class="fpill on" onclick="setFilter(this,'all')">all</div>
+      <div class="fpill" onclick="setFilter(this,'service')">service</div>
+      <div class="fpill" onclick="setFilter(this,'pipeline')">pipeline</div>
+      <div class="fpill" onclick="setFilter(this,'database')">db</div>
+      <div class="fpill" onclick="setFilter(this,'redis')">redis</div>
+    </div>
+    <div class="tb-right">
+      <div class="btn-icon" title="Toggle legend" onclick="document.getElementById('legend').style.display=document.getElementById('legend').style.display==='none'?'flex':'none'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </div>
+      <button class="btn primary" onclick="alert('Add node modal — Phase 1 implementation')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        add node
+      </button>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div id="content">
+
+    <!-- ═══ GRAPH VIEW ═══ -->
+    <div id="graph-view">
+      <div id="canvas-wrap">
+        <div class="grid-bg"></div>
+        <svg id="edges-svg"></svg>
+        <div id="nodes-layer"></div>
+
+        <!-- Legend -->
+        <div class="legend" id="legend" style="display:flex">
+          <div class="legend-row"><div class="legend-dot" style="background:var(--accent)"></div>service</div>
+          <div class="legend-row"><div class="legend-dot" style="background:var(--teal)"></div>pipeline</div>
+          <div class="legend-row"><div class="legend-dot" style="background:var(--purple)"></div>database</div>
+          <div class="legend-row"><div class="legend-dot" style="background:var(--coral)"></div>redis</div>
+          <div class="legend-row"><div class="legend-dot" style="background:var(--amber)"></div>gcs_bucket</div>
+          <div class="legend-row"><div class="legend-dot" style="background:var(--text2)"></div>schema</div>
+        </div>
+
+        <!-- Stats -->
+        <div class="graph-info">
+          <div class="gstat"><b id="n-count">8</b> nodes</div>
+          <div class="gstat"><b id="e-count">9</b> edges</div>
+          <div class="gstat live">● <b>3</b> active</div>
+        </div>
+
+        <!-- Minimap -->
+        <div class="minimap" id="minimap"></div>
+      </div>
+
+      <!-- Detail panel -->
+      <div id="panel">
+        <div class="p-head">
+          <div class="p-ico" id="p-ico"></div>
+          <div class="p-meta">
+            <div class="p-title" id="p-title">Node title</div>
+            <div class="p-badges">
+              <span class="badge" id="p-type-badge">type</span>
+              <span style="font-size:11px;color:var(--text2)" id="p-team">team</span>
+            </div>
+          </div>
+          <div class="p-close" onclick="closePanel()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </div>
+        </div>
+        <div class="p-body" id="p-body"></div>
+        <div class="p-foot">
+          <button class="btn" style="flex:1" onclick="closePanel()">edit node</button>
+          <button class="btn primary" style="flex:1.4" onclick="nav('notebook')">
+            open notebook ▶
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ NOTEBOOK VIEW ═══ -->
+    <div id="notebook-view">
+      <div class="nb-bar">
+        <div class="nb-back" onclick="nav('graph')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="15 18 9 12 15 6"/></svg>
+          graph
+        </div>
+        <div class="tb-sep"></div>
+        <div class="nb-title">Auth Redis Cache</div>
+        <span class="badge sb-coral" style="margin-left:4px">redis</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <span class="nb-save">saved 8s ago</span>
+          <button class="btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"/></svg>
+            snapshot
+          </button>
+          <button class="btn">history</button>
+          <button class="btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-5.09"/></svg>
+            restart
+          </button>
+          <button class="btn run">
+            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            run all
+          </button>
+        </div>
+      </div>
+      <div class="nb-body">
+        <!-- Outline -->
+        <div class="nb-outline">
+          <div class="nb-ol-hd">cells</div>
+          <div class="nb-ol-scroll">
+            <div class="nb-oi" onclick="focusCell(0)"><span class="nb-oi-num">[raw]</span><span class="nb-oi-type">meta</span> metadata</div>
+            <div class="nb-oi" onclick="focusCell(1)"><span class="nb-oi-num">[md]</span> overview</div>
+            <div class="nb-oi active" onclick="focusCell(2)"><span class="nb-oi-num">[1]</span> setup</div>
+            <div class="nb-oi" onclick="focusCell(3)"><span class="nb-oi-num">[2]</span> key scan</div>
+            <div class="nb-oi" onclick="focusCell(4)"><span class="nb-oi-num">[3]</span> ttl stats</div>
+            <div class="nb-oi" onclick="focusCell(5)"><span class="nb-oi-num">[4]</span> memory top</div>
+            <div class="nb-oi" onclick="focusCell(6)"><span class="nb-oi-num">[ ]</span><span class="nb-oi-type">warn</span> admin ops</div>
+          </div>
+        </div>
+        <!-- Cells -->
+        <div class="nb-cells" id="nb-cells">
+
+          <div class="session-banner">
+            <div class="s-pulse"></div>
+            <div class="s-text">
+              session active · sa: <strong>platform-sa@payments-prod.iam</strong> · resources: <strong>payments-redis</strong>
+            </div>
+            <div class="s-end">end session</div>
+          </div>
+
+          <!-- Cell 0: raw metadata -->
+          <div class="cell" id="cell-0">
+            <div class="ch">
+              <span class="c-num">[raw]</span>
+              <span class="c-type">metadata</span>
+            </div>
+            <div class="raw-cell"># datakb
+title: "Auth Redis Cache"
+type: redis
+team: platform
+tags: [redis, cache, auth, session]
+links:
+  - target: "Auth Service Pipeline"
+    edge: reads_from
+  - target: "User Sessions Schema"
+    edge: produces</div>
+          </div>
+
+          <!-- Cell 1: markdown -->
+          <div class="cell" id="cell-1">
+            <div class="ch">
+              <span class="c-num">[md]</span>
+              <span class="c-type">markdown</span>
+            </div>
+            <div class="md-cell">
+              <h2>Auth Service Redis Cache</h2>
+              <p>Session token cache for the Auth Service. TTL: 24h. Eviction policy: allkeys-lru. Hosted on GCP Memorystore, us-central1-a. Do not flush in production without a maintenance window.</p>
+            </div>
+          </div>
+
+          <!-- Cell 2: setup (focused) -->
+          <div class="cell focused" id="cell-2">
+            <div class="ch">
+              <span class="c-num">[1]</span>
+              <span class="c-type">code</span>
+              <button class="c-run"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
+            </div>
+            <div class="cb">
+              <div class="code">
+                <span class="kw">from</span> kb_client <span class="kw">import</span> <span class="fn">get_redis</span><br>
+                <span class="kw">import</span> pandas <span class="kw">as</span> pd<br>
+                <br>
+                r = <span class="fn">get_redis</span>(<span class="st">"payments-redis"</span>)<br>
+                info = r.<span class="fn">info</span>()<br>
+                <span class="fn">print</span>(<span class="st">f"Redis </span>{info[<span class="st">'redis_version'</span>]}<span class="st"> · uptime </span>{info[<span class="st">'uptime_in_days'</span>]}<span class="st">d · used memory: </span>{info[<span class="st">'used_memory_human'</span>]}<span class="st">"</span>)
+              </div>
+            </div>
+            <div class="out">
+              <div class="out-lbl">output [1]</div>
+              <div class="out-txt">Redis 7.2.4 · uptime 42d · used memory: 2.34G</div>
+            </div>
+          </div>
+
+          <!-- Cell 3: key scan -->
+          <div class="cell" id="cell-3">
+            <div class="ch">
+              <span class="c-num">[2]</span>
+              <span class="c-type">code</span>
+              <button class="c-run"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
+            </div>
+            <div class="cb">
+              <div class="code">
+                keys = r.<span class="fn">keys</span>(<span class="st">"session:*"</span>)<br>
+                <span class="fn">print</span>(<span class="st">f"Active sessions: </span>{len(keys)}<span class="st">"</span>)<br>
+                <br>
+                <span class="cm"># Sample TTL distribution</span><br>
+                ttls = [r.<span class="fn">ttl</span>(k) <span class="kw">for</span> k <span class="kw">in</span> keys[:<span class="nm">200</span>]]<br>
+                pd.<span class="fn">Series</span>(ttls).<span class="fn">describe</span>().<span class="fn">rename</span>(<span class="st">"ttl_seconds"</span>)
+              </div>
+            </div>
+            <div class="out">
+              <div class="out-lbl">output [2]</div>
+              <div class="out-txt" style="margin-bottom:10px">Active sessions: 14,832</div>
+              <table class="out-df">
+                <thead><tr><th></th><th>ttl_seconds</th></tr></thead>
+                <tbody>
+                  <tr><td>count</td><td>200.000</td></tr>
+                  <tr><td>mean</td><td>68421.340</td></tr>
+                  <tr><td>std</td><td>21884.120</td></tr>
+                  <tr><td>min</td><td>1243.000</td></tr>
+                  <tr><td>25%</td><td>52180.750</td></tr>
+                  <tr><td>50%</td><td>71040.500</td></tr>
+                  <tr><td>75%</td><td>83400.250</td></tr>
+                  <tr><td>max</td><td>86399.000</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Cell 4: memory top -->
+          <div class="cell" id="cell-4">
+            <div class="ch">
+              <span class="c-num">[3]</span>
+              <span class="c-type">code</span>
+              <button class="c-run"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
+            </div>
+            <div class="cb">
+              <div class="code">
+                <span class="cm"># Top 10 keys by memory usage</span><br>
+                pipe = r.<span class="fn">pipeline</span>()<br>
+                <span class="kw">for</span> k <span class="kw">in</span> keys[:<span class="nm">100</span>]: pipe.<span class="fn">memory_usage</span>(k)<br>
+                sizes = pipe.<span class="fn">execute</span>()<br>
+                <br>
+                pd.<span class="fn">DataFrame</span>({<span class="st">"key"</span>: keys[:<span class="nm">100</span>], <span class="st">"bytes"</span>: sizes})\<br>
+                &nbsp;&nbsp;.<span class="fn">sort_values</span>(<span class="st">"bytes"</span>, ascending=<span class="kw">False</span>)\<br>
+                &nbsp;&nbsp;.<span class="fn">head</span>(<span class="nm">5</span>)
+              </div>
+            </div>
+            <div class="out">
+              <div class="out-lbl">output [3]</div>
+              <table class="out-df">
+                <thead><tr><th>key</th><th>bytes</th></tr></thead>
+                <tbody>
+                  <tr><td style="font-family:var(--mono);font-size:10px">session:usr_8f2a91c4</td><td>4096</td></tr>
+                  <tr><td style="font-family:var(--mono);font-size:10px">session:usr_3d1b77e2</td><td>3840</td></tr>
+                  <tr><td style="font-family:var(--mono);font-size:10px">session:usr_c90f4512</td><td>3712</td></tr>
+                  <tr><td style="font-family:var(--mono);font-size:10px">session:usr_1a8e23d0</td><td>3584</td></tr>
+                  <tr><td style="font-family:var(--mono);font-size:10px">session:usr_77f91bd9</td><td>3328</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Cell 5: admin (commented) -->
+          <div class="cell" id="cell-5">
+            <div class="ch">
+              <span class="c-num">[ ]</span>
+              <span class="c-type">code</span>
+              <span style="font-size:10px;color:var(--amber);margin-left:4px">⚠ admin</span>
+              <button class="c-run"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
+            </div>
+            <div class="cb">
+              <div class="code">
+                <span class="cm"># ⚠ Flush expired sessions — run only during maintenance</span><br>
+                <span class="cm"># UNCOMMENT TO EXECUTE:</span><br>
+                <span class="cm"># expired = [k for k in keys if r.ttl(k) == -2]</span><br>
+                <span class="cm"># deleted = r.delete(*expired)</span><br>
+                <span class="cm"># print(f"Deleted {deleted} expired keys")</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ SETTINGS VIEW ═══ -->
+    <div id="settings-view">
+      <div class="nb-bar">
+        <div class="nb-back" onclick="nav('graph')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="15 18 9 12 15 6"/></svg>
+          graph
+        </div>
+        <div class="tb-sep"></div>
+        <div class="nb-title">Settings</div>
+      </div>
+      <div class="st-body">
+        <div class="st-nav">
+          <div class="st-nav-label">configuration</div>
+          <div class="st-ni active" id="ni-gcp" onclick="stTab('gcp')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+            GCP Projects
+          </div>
+          <div class="st-ni" id="ni-sa" onclick="stTab('sa')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Service Accounts
+          </div>
+          <div class="st-ni" id="ni-res" onclick="stTab('res')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+            Resources
+          </div>
+          <div class="st-nav-label" style="margin-top:14px">access</div>
+          <div class="st-ni" id="ni-users" onclick="stTab('users')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Users
+          </div>
+        </div>
+
+        <div class="st-main">
+
+          <!-- GCP tab -->
+          <div id="st-gcp">
+            <div class="st-h">GCP Projects</div>
+            <div class="st-sub">Register GCP projects and attach Service Accounts to enable credential injection in notebook kernels.</div>
+            <div class="st-toolbar">
+              <button class="btn primary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                add project
+              </button>
+            </div>
+            <table class="tbl">
+              <thead><tr><th>project id</th><th>display name</th><th>SAs</th><th>nodes</th><th>added</th><th></th></tr></thead>
+              <tbody>
+                <tr>
+                  <td class="tbl-mono">payments-prod</td>
+                  <td>Payments Production</td>
+                  <td>2</td><td>5</td>
+                  <td class="tbl-dim">14 Apr</td>
+                  <td><span class="tbl-act del">remove</span></td>
+                </tr>
+                <tr>
+                  <td class="tbl-mono">analytics-prod</td>
+                  <td>Analytics Production</td>
+                  <td>1</td><td>3</td>
+                  <td class="tbl-dim">2 Apr</td>
+                  <td><span class="tbl-act del">remove</span></td>
+                </tr>
+                <tr>
+                  <td class="tbl-mono">ml-platform</td>
+                  <td>ML Platform</td>
+                  <td>1</td><td>2</td>
+                  <td class="tbl-dim">28 Mar</td>
+                  <td><span class="tbl-act del">remove</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- SA tab -->
+          <div id="st-sa" style="display:none">
+            <div class="st-h">Service Accounts</div>
+            <div class="st-sub">SA key files are stored server-side in SECRETS_DIR — never returned by the API. Provide workload identity SA emails for GCP-hosted deployments.</div>
+            <div class="st-toolbar">
+              <select class="st-sel">
+                <option>All projects</option>
+                <option>payments-prod</option>
+                <option>analytics-prod</option>
+                <option>ml-platform</option>
+              </select>
+              <button class="btn primary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                add SA
+              </button>
+            </div>
+            <table class="tbl">
+              <thead><tr><th>email</th><th>type</th><th>status</th><th>nodes</th><th></th></tr></thead>
+              <tbody>
+                <tr>
+                  <td class="tbl-mono" style="font-size:10px">platform-sa@payments-prod.iam.gserviceaccount.com</td>
+                  <td><span class="sb sb-green">key_file</span></td>
+                  <td><span class="sb sb-green">✓ connected</span></td>
+                  <td>3</td>
+                  <td><span class="tbl-act">test</span> <span class="tbl-act del">remove</span></td>
+                </tr>
+                <tr>
+                  <td class="tbl-mono" style="font-size:10px">analytics-sa@payments-prod.iam.gserviceaccount.com</td>
+                  <td><span class="sb sb-green">key_file</span></td>
+                  <td><span class="sb sb-amber">⚠ expiring 3d</span></td>
+                  <td>2</td>
+                  <td><span class="tbl-act">test</span> <span class="tbl-act del">remove</span></td>
+                </tr>
+                <tr>
+                  <td class="tbl-mono" style="font-size:10px">ml-sa@ml-platform.iam.gserviceaccount.com</td>
+                  <td><span class="sb sb-teal">workload_id</span></td>
+                  <td><span class="sb sb-green">✓ connected</span></td>
+                  <td>2</td>
+                  <td><span class="tbl-act">test</span> <span class="tbl-act del">remove</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Resources tab -->
+          <div id="st-res" style="display:none">
+            <div class="st-h">Resource Registry</div>
+            <div class="st-sub">Named resources whose connection config and credentials are injected into kernel sessions as env vars. Passwords are write-only — stored in SECRETS_DIR.</div>
+            <div class="st-toolbar">
+              <button class="btn primary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                add resource
+              </button>
+            </div>
+            <table class="tbl">
+              <thead><tr><th>name</th><th>type</th><th>project</th><th>config</th><th>pwd</th><th>nodes</th><th></th></tr></thead>
+              <tbody>
+                <tr>
+                  <td class="tbl-mono">payments-redis</td>
+                  <td><span class="sb sb-coral">redis</span></td>
+                  <td class="tbl-dim">payments-prod</td>
+                  <td class="tbl-mono" style="font-size:10px">10.0.0.5:6379 tls</td>
+                  <td><span class="sb sb-green">●</span></td>
+                  <td>2</td>
+                  <td><span class="tbl-act">edit</span> <span class="tbl-act del">delete</span></td>
+                </tr>
+                <tr>
+                  <td class="tbl-mono">analytics-bq</td>
+                  <td><span class="sb sb-blue">bigquery</span></td>
+                  <td class="tbl-dim">analytics-prod</td>
+                  <td class="tbl-mono" style="font-size:10px">analytics.events</td>
+                  <td><span class="tbl-dim">—</span></td>
+                  <td>3</td>
+                  <td><span class="tbl-act">edit</span> <span class="tbl-act del">delete</span></td>
+                </tr>
+                <tr>
+                  <td class="tbl-mono">raw-events-gcs</td>
+                  <td><span class="sb" style="border-color:rgba(245,166,35,.35);color:var(--amber);background:rgba(245,166,35,.06)">gcs</span></td>
+                  <td class="tbl-dim">analytics-prod</td>
+                  <td class="tbl-mono" style="font-size:10px">gs://raw-events/data/</td>
+                  <td><span class="tbl-dim">—</span></td>
+                  <td>1</td>
+                  <td><span class="tbl-act">edit</span> <span class="tbl-act del">delete</span></td>
+                </tr>
+                <tr>
+                  <td class="tbl-mono">internal-api</td>
+                  <td><span class="sb sb-teal">http</span></td>
+                  <td class="tbl-dim">—</td>
+                  <td class="tbl-mono" style="font-size:10px">https://api.internal.co</td>
+                  <td><span class="sb sb-green">●</span></td>
+                  <td>1</td>
+                  <td><span class="tbl-act">edit</span> <span class="tbl-act del">delete</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Users tab -->
+          <div id="st-users" style="display:none">
+            <div class="st-h">Users</div>
+            <div class="st-sub">Manage roles. Editors can run any notebook. Admins manage GCP config and user roles.</div>
+            <div class="st-toolbar">
+              <button class="btn primary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                invite user
+              </button>
+            </div>
+            <table class="tbl">
+              <thead><tr><th>email</th><th>name</th><th>role</th><th>team</th><th>last login</th><th></th></tr></thead>
+              <tbody>
+                <tr>
+                  <td class="tbl-mono" style="font-size:11px">alice@company.com</td>
+                  <td>Alice</td>
+                  <td><span class="sb sb-purple">admin</span></td>
+                  <td class="tbl-dim">platform</td>
+                  <td class="tbl-dim">now</td>
+                  <td><span class="tbl-act">edit</span></td>
+                </tr>
+                <tr>
+                  <td class="tbl-mono" style="font-size:11px">bob@company.com</td>
+                  <td>Bob</td>
+                  <td><span class="sb sb-green">editor</span></td>
+                  <td class="tbl-dim">analytics</td>
+                  <td class="tbl-dim">2h ago</td>
+                  <td><span class="tbl-act">edit</span></td>
+                </tr>
+                <tr>
+                  <td class="tbl-mono" style="font-size:11px">carol@company.com</td>
+                  <td>Carol</td>
+                  <td><span class="sb sb-green">editor</span></td>
+                  <td class="tbl-dim">platform</td>
+                  <td class="tbl-dim">yesterday</td>
+                  <td><span class="tbl-act">edit</span></td>
+                </tr>
+                <tr>
+                  <td class="tbl-mono" style="font-size:11px">dan@company.com</td>
+                  <td>Dan</td>
+                  <td><span class="sb sb-gray">viewer</span></td>
+                  <td class="tbl-dim">analytics</td>
+                  <td class="tbl-dim">3d ago</td>
+                  <td><span class="tbl-act">edit</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+</div><!-- /app -->
+
+<script>
+const ICONS={service:'⬡',pipeline:'⇒',database:'⬢',redis:'⚡',gcs_bucket:'▣',schema:'≡',note:'✎',team:'◈'};
+const COLORS={
+  service:'var(--accent)',pipeline:'var(--teal)',database:'var(--purple)',
+  redis:'var(--coral)',gcs_bucket:'var(--amber)',schema:'var(--text2)',note:'var(--green)'
+};
+const BG={
+  service:'rgba(77,124,255,.15)',pipeline:'rgba(56,189,248,.15)',database:'rgba(167,139,250,.15)',
+  redis:'rgba(255,107,107,.15)',gcs_bucket:'rgba(245,166,35,.15)',schema:'rgba(90,106,144,.15)',note:'rgba(45,212,160,.15)'
+};
+
+const NODES=[
+  {id:'n1',title:'Auth Service',type:'service',team:'platform',tags:['node','express','auth'],desc:'Core authentication microservice handling login, token issuance, and session validation.',x:80,y:130,nb:true,active:true},
+  {id:'n2',title:'Auth Redis Cache',type:'redis',team:'platform',tags:['redis','cache','session'],desc:'Session token cache. TTL: 24h. Eviction: allkeys-lru. Hosted on GCP Memorystore us-central1.',x:320,y:50,nb:true,active:true},
+  {id:'n3',title:'Auth Pipeline',type:'pipeline',team:'platform',tags:['airflow','etl','daily'],desc:'Nightly Airflow DAG that reconciles session data and cleans up stale tokens.',x:320,y:240,nb:true,active:false},
+  {id:'n4',title:'User Sessions Schema',type:'schema',team:'platform',tags:['postgres','schema'],desc:'PostgreSQL schema for the user_sessions table. Owns the canonical session record.',x:580,y:130,nb:false,active:false},
+  {id:'n5',title:'Analytics Warehouse',type:'database',team:'analytics',tags:['bigquery','warehouse'],desc:'Main BigQuery warehouse. Events dataset receives ~80M rows/day from the events pipeline.',x:580,y:350,nb:true,active:true},
+  {id:'n6',title:'Events Pipeline',type:'pipeline',team:'analytics',tags:['spark','dataproc'],desc:'Spark job on Dataproc. Reads raw GCS events, transforms and loads into BigQuery.',x:80,y:350,nb:true,active:false},
+  {id:'n7',title:'Raw Events GCS',type:'gcs_bucket',team:'analytics',tags:['gcs','raw','events'],desc:'Landing zone for raw event payloads from the web and mobile clients.',x:310,y:440,nb:false,active:false},
+  {id:'n8',title:'ML Feature Store',type:'database',team:'ml-platform',tags:['redis','features','ml'],desc:'Redis-backed feature store. Serves real-time feature vectors to the recommendation model.',x:810,y:240,nb:true,active:false},
+];
+
+const EDGES=[
+  {s:'n1',t:'n2',label:'reads_from'},
+  {s:'n3',t:'n2',label:'reads_from'},
+  {s:'n1',t:'n3',label:'depends_on'},
+  {s:'n3',t:'n4',label:'produces'},
+  {s:'n6',t:'n7',label:'reads_from'},
+  {s:'n6',t:'n5',label:'writes_to'},
+  {s:'n3',t:'n5',label:'writes_to'},
+  {s:'n5',t:'n8',label:'produces'},
+  {s:'n4',t:'n5',label:'consumes'},
+];
+
+let sel=null, filterType='all', searchQ='';
+
+function visible(n){
+  if(filterType!=='all'&&n.type!==filterType)return false;
+  if(searchQ&&!n.title.toLowerCase().includes(searchQ)&&!n.tags.join(' ').includes(searchQ)&&!n.team.includes(searchQ))return false;
+  return true;
+}
+
+function renderGraph(){
+  const layer=document.getElementById('nodes-layer');
+  layer.innerHTML='';
+  const svg=document.getElementById('edges-svg');
+  svg.innerHTML=`<defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M1 1L9 5L1 9" fill="none" stroke="#3a4570" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arr-hi" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M1 1L9 5L1 9" fill="none" stroke="#4d7cff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>`;
+
+  // Draw edges
+  EDGES.forEach(e=>{
+    const sn=NODES.find(n=>n.id===e.s), tn=NODES.find(n=>n.id===e.t);
+    if(!sn||!tn||!visible(sn)||!visible(tn))return;
+    const x1=sn.x+82,y1=sn.y+44,x2=tn.x+82,y2=tn.y+44;
+    const hi=sel&&(e.s===sel||e.t===sel);
+    const mx=(x1+x2)/2, off=Math.abs(y2-y1)*0.3;
+    const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d',`M${x1} ${y1} C${x1+off} ${y1} ${x2-off} ${y2} ${x2} ${y2}`);
+    path.setAttribute('fill','none');
+    path.setAttribute('stroke',hi?'#4d7cff':'#2a3050');
+    path.setAttribute('stroke-width',hi?'2':'1.5');
+    path.setAttribute('marker-end',hi?'url(#arr-hi)':'url(#arr)');
+    svg.appendChild(path);
+    // Edge label on highlighted edges
+    if(hi){
+      const lbl=document.createElementNS('http://www.w3.org/2000/svg','text');
+      lbl.setAttribute('x',(x1+x2)/2);lbl.setAttribute('y',(y1+y2)/2-6);
+      lbl.setAttribute('text-anchor','middle');
+      lbl.setAttribute('fill','#4d7cff');lbl.setAttribute('font-size','10');
+      lbl.setAttribute('font-family','JetBrains Mono,monospace');
+      lbl.textContent=e.label;
+      svg.appendChild(lbl);
+    }
+  });
+
+  // Draw nodes
+  NODES.forEach(n=>{
+    const vis=visible(n);
+    const el=document.createElement('div');
+    el.className=`gnode nt-${n.type}${sel===n.id?' sel':''}${!vis?' dimmed':''}`;
+    el.style.cssText=`left:${n.x}px;top:${n.y}px`;
+    el.id='gn-'+n.id;
+    el.innerHTML=`<div class="nc">
+      ${n.nb?`<div class="n-dot${n.active?' active':' has-nb'}"></div>`:''}
+      <div class="n-head">
+        <div class="n-ico">${ICONS[n.type]||'○'}</div>
+        <div class="n-title">${n.title}</div>
+      </div>
+      <div class="n-team">${n.team}</div>
+      <div class="n-tags">${n.tags.slice(0,3).map(t=>`<span class="n-tag">${t}</span>`).join('')}</div>
+    </div>`;
+    el.onclick=()=>clickNode(n.id);
+    layer.appendChild(el);
+  });
+
+  document.getElementById('n-count').textContent=NODES.filter(visible).length;
+  document.getElementById('e-count').textContent=EDGES.filter(e=>{
+    const sn=NODES.find(n=>n.id===e.s),tn=NODES.find(n=>n.id===e.t);
+    return sn&&tn&&visible(sn)&&visible(tn);
+  }).length;
+  updateMinimap();
+}
+
+function clickNode(id){
+  sel=sel===id?null:id;
+  renderGraph();
+  if(sel)openPanel(NODES.find(n=>n.id===id));
+  else closePanel();
+}
+
+function openPanel(n){
+  const col=COLORS[n.type]||'var(--text2)';
+  const bg=BG[n.type]||'rgba(90,106,144,.15)';
+  const ico=document.getElementById('p-ico');
+  ico.style.cssText=`background:${bg};color:${col}`;
+  ico.textContent=ICONS[n.type]||'○';
+  document.getElementById('p-title').textContent=n.title;
+  const tb=document.getElementById('p-type-badge');
+  tb.textContent=n.type;tb.style.cssText=`border-color:${col};color:${col};background:${bg}`;
+  document.getElementById('p-team').textContent=n.team;
+
+  const rels=EDGES.filter(e=>e.s===n.id||e.t===n.id);
+  document.getElementById('p-body').innerHTML=`
+    ${n.desc?`<div class="p-sec"><div class="p-sec-label">description</div><div class="p-desc">${n.desc}</div></div>`:''}
+    <div class="p-sec">
+      <div class="p-sec-label">execution</div>
+      <div class="p-kv">
+        <span class="p-k">gcp_project</span><span class="p-v">payments-prod</span>
+        <span class="p-k">service_account</span><span class="p-v">platform-sa@payments-prod</span>
+        <span class="p-k">resources</span><span class="p-v">payments-redis</span>
+        <span class="p-k">last_run</span><span class="p-v">2h ago · alice@company.com</span>
+        ${n.active?`<span class="p-k">active sessions</span><span class="p-v" style="color:var(--green)">2 running</span>`:''}
+      </div>
+    </div>
+    <div class="p-sec">
+      <div class="p-sec-label">relationships (${rels.length})</div>
+      ${rels.map(e=>{
+        const oth=NODES.find(nd=>nd.id===(e.s===n.id?e.t:e.s));
+        return `<div class="p-rel" onclick="clickNode('${oth.id}')">
+          <span class="p-rel-dir">${e.s===n.id?'→ out':'← in'}</span>
+          <span class="p-rel-lbl">${e.label}</span>
+          <span class="p-rel-target">${oth.title}</span>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="p-sec">
+      <div class="p-sec-label">tags</div>
+      <div class="p-tags">${n.tags.map(t=>`<span class="p-tag">${t}</span>`).join('')}</div>
+    </div>`;
+  document.getElementById('panel').classList.add('open');
+}
+
+function closePanel(){
+  sel=null;renderGraph();
+  document.getElementById('panel').classList.remove('open');
+}
+
+function doSearch(v){searchQ=v.toLowerCase();renderGraph()}
+function setFilter(el,t){
+  filterType=t;
+  document.querySelectorAll('.fpill').forEach(p=>p.classList.remove('on'));
+  el.classList.add('on');
+  renderGraph();
+}
+
+function nav(view){
+  // sidebar icons
+  document.querySelectorAll('.sbi[id]').forEach(b=>b.classList.remove('active'));
+  document.getElementById('sb-'+view)?.classList.add('active');
+
+  // views
+  document.getElementById('graph-view').style.display=view==='graph'?'flex':'none';
+  document.getElementById('notebook-view').classList.toggle('vis',view==='notebook');
+  document.getElementById('settings-view').classList.toggle('vis',view==='settings');
+
+  // filter row only on graph
+  document.getElementById('filter-row').style.display=view==='graph'?'flex':'none';
+
+  // crumb
+  const crumbs={graph:'knowledge graph',notebook:'Auth Redis Cache → notebook',settings:'settings'};
+  document.getElementById('tb-crumb').textContent=crumbs[view]||'';
+}
+
+function stTab(tab){
+  ['gcp','sa','res','users'].forEach(t=>{
+    document.getElementById('st-'+t).style.display=t===tab?'block':'none';
+    document.getElementById('ni-'+t)?.classList.toggle('active',t===tab);
+  });
+}
+
+function focusCell(idx){
+  document.querySelectorAll('.cell').forEach((c,i)=>c.classList.toggle('focused',i===idx));
+  document.querySelectorAll('.nb-oi').forEach((o,i)=>o.classList.toggle('active',i===idx));
+}
+
+function updateMinimap(){
+  const mm=document.getElementById('minimap');
+  mm.innerHTML='';
+  const sx=110/1000,sy=64/520;
+  NODES.forEach(n=>{
+    if(!visible(n))return;
+    const d=document.createElement('div');
+    d.className='mm-node';
+    d.style.cssText=`left:${5+n.x*sx}px;top:${4+n.y*sy}px;width:${Math.max(4,38*sx)}px;height:${Math.max(3,28*sy)}px;background:${COLORS[n.type]||'var(--text2)'}`;
+    mm.appendChild(d);
+  });
+}
+
+// Init
+nav('graph');
+renderGraph();
+</script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  datakb:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATAKB_SECRET_KEY: "change-me-in-production-use-openssl-rand-hex-32"
+      AUTH_MODE: local
+      DATABASE_URL: "sqlite+aiosqlite:////data/datakb.db"
+      STORAGE_BACKEND: local
+      STORAGE_LOCAL_PATH: /content
+      SECRETS_DIR: /secrets
+      LOG_LEVEL: INFO
+    volumes:
+      - ./content:/content
+      - ./data:/data
+      - ./secrets:/secrets:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

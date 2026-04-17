@@ -1,0 +1,2284 @@
+openapi: 3.1.0
+
+info:
+  title: DataKB API
+  version: 1.0.0
+  description: |
+    REST API for DataKB — an open source executable knowledge graph for data
+    engineering teams. Notebooks are attached to graph nodes and executed in
+    isolated per-user Jupyter kernel sessions. GCP credentials are injected
+    at kernel startup via server-side Service Account impersonation.
+
+    ## Authentication
+
+    All endpoints except `/api/auth/login`, `/api/auth/google`,
+    `/api/auth/callback`, and `/api/health` require a valid JWT:
+
+    ```
+    Authorization: Bearer <jwt>
+    ```
+
+    JWTs are issued on login (local mode) or after Google OAuth (google mode).
+    They expire after 8 hours. Use `POST /api/auth/refresh` with the
+    `datakb_refresh` httpOnly cookie to obtain a new JWT silently.
+
+    ## Roles
+
+    | Role    | Capabilities |
+    |---------|-------------|
+    | `admin`  | Full access — graph, notebooks, kernels, GCP config, users |
+    | `editor` | Graph read/write, notebooks read/write, kernels start/stop |
+    | `viewer` | Graph read, notebook outputs read (static, no execution) |
+
+    ## Error format
+
+    All error responses use a consistent shape:
+
+    ```json
+    {
+      "error": "error_code",
+      "message": "Human-readable description",
+      "details": {}
+    }
+    ```
+
+  contact:
+    name: DataKB on GitHub
+    url: https://github.com/datakb/datakb
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
+  - url: https://kb.yourcompany.com
+    description: Production (example)
+
+tags:
+  - name: auth
+    description: Authentication — local login, Google OAuth, token refresh
+  - name: graph
+    description: Knowledge graph — nodes and edges
+  - name: notebooks
+    description: Notebook content, auto-save, snapshots, and version history
+  - name: kernels
+    description: Jupyter kernel session lifecycle
+  - name: gcp
+    description: GCP project and Service Account configuration (admin only)
+  - name: resources
+    description: Named resource registry — BigQuery, Redis, GCS, HTTP, custom (admin only)
+  - name: users
+    description: User management (admin only)
+  - name: health
+    description: Health and readiness probes
+
+security:
+  - bearerAuth: []
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    # ── Primitives ──────────────────────────────────────────────
+
+    UUID:
+      type: string
+      format: uuid
+      example: "550e8400-e29b-41d4-a716-446655440000"
+
+    ISODateTime:
+      type: string
+      format: date-time
+      example: "2026-04-17T14:32:11Z"
+
+    NodeType:
+      type: string
+      enum: [service, pipeline, database, redis, gcs_bucket, schema, note, team]
+      example: redis
+
+    EdgeLabel:
+      type: string
+      enum: [reads_from, writes_to, depends_on, owns, produces, consumes, triggers]
+      example: reads_from
+
+    UserRole:
+      type: string
+      enum: [admin, editor, viewer]
+      example: editor
+
+    CredentialType:
+      type: string
+      enum: [key_file, workload_identity]
+      example: key_file
+
+    ResourceType:
+      type: string
+      enum: [bigquery, redis, gcs, http, tcp, custom]
+      example: redis
+
+    # ── Error ────────────────────────────────────────────────────
+
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          example: not_found
+        message:
+          type: string
+          example: "Node with id abc123 not found"
+        details:
+          type: object
+          additionalProperties: true
+
+    # ── Auth ────────────────────────────────────────────────────
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: alice@company.com
+        password:
+          type: string
+          format: password
+          minLength: 8
+
+    TokenResponse:
+      type: object
+      required: [access_token, token_type, expires_in, user]
+      properties:
+        access_token:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        token_type:
+          type: string
+          enum: [bearer]
+        expires_in:
+          type: integer
+          description: Seconds until expiry
+          example: 28800
+        user:
+          $ref: "#/components/schemas/User"
+
+    User:
+      type: object
+      required: [id, email, role, created_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/UUID"
+        email:
+          type: string
+          format: email
+          example: alice@company.com
+        display_name:
+          type: string
+          nullable: true
+          example: Alice
+        role:
+          $ref: "#/components/schemas/UserRole"
+        team:
+          type: string
+          nullable: true
+          example: platform
+        is_active:
+          type: boolean
+          example: true
+        created_at:
+          $ref: "#/components/schemas/ISODateTime"
+        last_login_at:
+          $ref: "#/components/schemas/ISODateTime"
+          nullable: true
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        role:
+          $ref: "#/components/schemas/UserRole"
+        team:
+          type: string
+          nullable: true
+        display_name:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+
+    InviteUserRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          example: bob@company.com
+        role:
+          $ref: "#/components/schemas/UserRole"
+          default: viewer
+        team:
+          type: string
+          nullable: true
+
+    # ── Graph ───────────────────────────────────────────────────
+
+    GCPProjectSummary:
+      type: object
+      required: [id, project_id, display_name]
+      properties:
+        id:
+          $ref: "#/components/schemas/UUID"
+        project_id:
+          type: string
+          example: payments-prod
+        display_name:
+          type: string
+          example: "Payments Production"
+
+    ServiceAccountSummary:
+      type: object
+      required: [id, sa_email, display_name]
+      properties:
+        id:
+          $ref: "#/components/schemas/UUID"
+        sa_email:
+          type: string
+          example: platform-sa@payments-prod.iam.gserviceaccount.com
+        display_name:
+          type: string
+          example: "Platform SA"
+
+    Node:
+      type: object
+      required:
+        - id
+        - title
+        - type
+        - tags
+        - resource_bindings
+        - created_by
+        - created_at
+        - updated_at
+        - is_archived
+        - current_user_access
+      properties:
+        id:
+          $ref: "#/components/schemas/UUID"
+        title:
+          type: string
+          example: "Auth Service Redis Cache"
+        type:
+          $ref: "#/components/schemas/NodeType"
+        team:
+          type: string
+          nullable: true
+          example: platform
+        description:
+          type: string
+          nullable: true
+          example: "Session token cache. TTL 24h. Eviction: allkeys-lru."
+        tags:
+          type: array
+          items:
+            type: string
+          example: [redis, cache, auth]
+        notebook_path:
+          type: string
+          nullable: true
+          description: Relative path within the storage backend
+          example: "platform/auth-redis.ipynb"
+        gcp_project:
+          $ref: "#/components/schemas/GCPProjectSummary"
+          nullable: true
+        service_account:
+          $ref: "#/components/schemas/ServiceAccountSummary"
+          nullable: true
+        resource_bindings:
+          type: array
+          items:
+            type: string
+          description: Names of resources injected into this node's kernels
+          example: [payments-redis, payments-bq]
+        created_by:
+          type: string
+          format: email
+          example: alice@company.com
+        created_at:
+          $ref: "#/components/schemas/ISODateTime"
+        updated_at:
+          $ref: "#/components/schemas/ISODateTime"
+        last_run_at:
+          $ref: "#/components/schemas/ISODateTime"
+          nullable: true
+        last_run_by:
+          type: string
+          format: email
+          nullable: true
+          example: bob@company.com
+        active_kernel_count:
+          type: integer
+          description: Currently active kernel sessions across all users
+          example: 2
+        is_archived:
+          type: boolean
+          example: false
+        current_user_access:
+          type: string
+          enum: [none, view, run, edit]
+          description: Resolved access level for the requesting user
+          example: run
+
+    Edge:
+      type: object
+      required: [id, source_id, target_id, label, created_by, created_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/UUID"
+        source_id:
+          $ref: "#/components/schemas/UUID"
+        target_id:
+          $ref: "#/components/schemas/UUID"
+        label:
+          $ref: "#/components/schemas/EdgeLabel"
+        created_by:
+          type: string
+          format: email
+          example: alice@company.com
+        created_at:
+          $ref: "#/components/schemas/ISODateTime"
+
+    GraphResponse:
+      type: object
+      required: [nodes, edges]
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Node"
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/Edge"
+
+    CreateNodeRequest:
+      type: object
+      required: [title, type]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          example: "Auth Service Redis Cache"
+        type:
+          $ref: "#/components/schemas/NodeType"
+        team:
+          type: string
+          nullable: true
+          example: platform
+        description:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+          default: []
+          example: [redis, cache, auth]
+        notebook_path:
+          type: string
+          nullable: true
+          example: "platform/auth-redis.ipynb"
+        gcp_project_id:
+          $ref: "#/components/schemas/UUID"
+          nullable: true
+        sa_id:
+          $ref: "#/components/schemas/UUID"
+          nullable: true
+        resource_bindings:
+          type: array
+          items:
+            type: string
+          default: []
+          example: [payments-redis]
+
+    UpdateNodeRequest:
+      type: object
+      description: All fields optional — only provided fields are updated
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        team:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        notebook_path:
+          type: string
+          nullable: true
+        gcp_project_id:
+          $ref: "#/components/schemas/UUID"
+          nullable: true
+        sa_id:
+          $ref: "#/components/schemas/UUID"
+          nullable: true
+        resource_bindings:
+          type: array
+          items:
+            type: string
+        is_archived:
+          type: boolean
+
+    CreateEdgeRequest:
+      type: object
+      required: [source_id, target_id, label]
+      properties:
+        source_id:
+          $ref: "#/components/schemas/UUID"
+        target_id:
+          $ref: "#/components/schemas/UUID"
+        label:
+          $ref: "#/components/schemas/EdgeLabel"
+
+    # ── Notebooks ───────────────────────────────────────────────
+
+    NotebookCell:
+      type: object
+      required: [id, cell_type, source, metadata, outputs]
+      properties:
+        id:
+          type: string
+          example: "a1b2c3d4"
+        cell_type:
+          type: string
+          enum: [code, markdown, raw]
+          example: code
+        source:
+          type: string
+          example: "from kb_client import get_redis\nr = get_redis('payments-cache')"
+        metadata:
+          type: object
+          additionalProperties: true
+        outputs:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        execution_count:
+          type: integer
+          nullable: true
+          example: 3
+
+    NotebookContent:
+      type: object
+      description: |
+        Jupyter notebook in nbformat v4. Full schema defined by the
+        Jupyter nbformat specification. DataKB passes this through to/from
+        storage without modification except during metadata YAML sync.
+      required: [nbformat, nbformat_minor, metadata, cells]
+      properties:
+        nbformat:
+          type: integer
+          enum: [4]
+        nbformat_minor:
+          type: integer
+          example: 5
+        metadata:
+          type: object
+          additionalProperties: true
+        cells:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotebookCell"
+
+    AutosaveRequest:
+      type: object
+      required: [content, client_updated_at]
+      properties:
+        content:
+          $ref: "#/components/schemas/NotebookContent"
+        client_updated_at:
+          $ref: "#/components/schemas/ISODateTime"
+          description: |
+            The `updated_at` the client last received. Used for conflict
+            detection — returns 409 if the server has a newer version.
+
+    AutosaveResponse:
+      type: object
+      required: [saved_at, metadata_synced]
+      properties:
+        saved_at:
+          $ref: "#/components/schemas/ISODateTime"
+        metadata_synced:
+          type: boolean
+          description: Whether the metadata YAML cell was parsed and synced
+          example: true
+        warning:
+          type: string
+          nullable: true
+          description: Non-fatal warning (e.g. metadata cell missing)
+          example: "Metadata cell not found. Node metadata was not synced."
+        unresolved_links:
+          type: array
+          items:
+            type: string
+          description: Node titles in metadata links that could not be resolved
+          example: ["Auth Service Pipeline"]
+
+    ConflictError:
+      type: object
+      required: [error, message, conflict_version]
+      properties:
+        error:
+          type: string
+          enum: [conflict]
+        message:
+          type: string
+          example: "This notebook was saved by bob@company.com 12 seconds ago."
+        conflict_version:
+          type: object
+          required: [saved_at, saved_by]
+          properties:
+            saved_at:
+              $ref: "#/components/schemas/ISODateTime"
+            saved_by:
+              type: string
+              format: email
+              example: bob@company.com
+
+    CreateSnapshotRequest:
+      type: object
+      required: [message, content]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 500
+          example: "Checked key count after deploy"
+        content:
+          $ref: "#/components/schemas/NotebookContent"
+
+    Snapshot:
+      type: object
+      required: [id, node_id, message, created_by, created_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/UUID"
+        node_id:
+          $ref: "#/components/schemas/UUID"
+        storage_path:
+          type: string
+          description: Internal path in storage backend — not a public URL
+          example: "platform/auth-redis.ipynb.snapshots/abc123.ipynb"
+        message:
+          type: string
+          example: "Checked key count after deploy"
+        created_by:
+          type: string
+          format: email
+          example: alice@company.com
+        created_at:
+          $ref: "#/components/schemas/ISODateTime"
+
+    NotebookVersion:
+      type: object
+      description: Single entry in version history (covers snapshots and autosaves)
+      required: [version_id, type, saved_at, saved_by]
+      properties:
+        version_id:
+          type: string
+          description: |
+            Opaque ID: snapshot UUID for snapshots;
+            storage-native version ID for autosaves
+            (GCS generation, S3 version ID, or local filename).
+          example: "1714000000123456"
+        type:
+          type: string
+          enum: [snapshot, autosave]
+          example: snapshot
+        saved_at:
+          $ref: "#/components/schemas/ISODateTime"
+        saved_by:
+          type: string
+          format: email
+          example: alice@company.com
+        message:
+          type: string
+          nullable: true
+          description: Message for snapshots; null for autosaves
+          example: "Checked key count after deploy"
+        size_bytes:
+          type: integer
+          nullable: true
+          example: 45678
+
+    # ── Kernels ─────────────────────────────────────────────────
+
+    StartKernelRequest:
+      type: object
+      required: [node_id]
+      properties:
+        node_id:
+          $ref: "#/components/schemas/UUID"
+
+    KernelSession:
+      type: object
+      required: [kernel_id, node_id, user_id, started_at, last_active_at, is_active]
+      properties:
+        kernel_id:
+          type: string
+          description: Jupyter kernel UUID
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        node_id:
+          $ref: "#/components/schemas/UUID"
+        user_id:
+          $ref: "#/components/schemas/UUID"
+        started_at:
+          $ref: "#/components/schemas/ISODateTime"
+        last_active_at:
+          $ref: "#/components/schemas/ISODateTime"
+        is_active:
+          type: boolean
+          example: true
+        gcp_project_id:
+          type: string
+          nullable: true
+          example: payments-prod
+        sa_email:
+          type: string
+          nullable: true
+          example: platform-sa@payments-prod.iam.gserviceaccount.com
+        resource_bindings:
+          type: array
+          items:
+            type: string
+          example: [payments-redis]
+
+    KernelStatus:
+      type: object
+      required: [kernel_id, status]
+      properties:
+        kernel_id:
+          type: string
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        status:
+          type: string
+          enum: [starting, idle, busy, dead, unknown]
+          example: idle
+        last_active_at:
+          $ref: "#/components/schemas/ISODateTime"
+          nullable: true
+
+    # ── GCP Config ──────────────────────────────────────────────
+
+    GCPProject:
+      type: object
+      required: [id, project_id, display_name, added_by, added_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/UUID"
+        project_id:
+          type: string
+          example: payments-prod
+        display_name:
+          type: string
+          example: "Payments Production"
+        sa_count:
+          type: integer
+          example: 2
+        node_count:
+          type: integer
+          example: 5
+        added_by:
+          type: string
+          format: email
+          example: alice@company.com
+        added_at:
+          $ref: "#/components/schemas/ISODateTime"
+
+    CreateGCPProjectRequest:
+      type: object
+      required: [project_id, display_name]
+      properties:
+        project_id:
+          type: string
+          minLength: 6
+          maxLength: 30
+          pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+          description: GCP project ID — must match GCP naming rules
+          example: payments-prod
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          example: "Payments Production"
+
+    ServiceAccount:
+      type: object
+      required: [id, gcp_project_id, sa_email, display_name, credential_type, added_by, added_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/UUID"
+        gcp_project_id:
+          $ref: "#/components/schemas/UUID"
+        sa_email:
+          type: string
+          example: platform-sa@payments-prod.iam.gserviceaccount.com
+        display_name:
+          type: string
+          example: "Platform Team SA"
+        credential_type:
+          $ref: "#/components/schemas/CredentialType"
+        key_file_present:
+          type: boolean
+          description: Whether a key file has been uploaded (key_file type only)
+          example: true
+        node_count:
+          type: integer
+          description: Number of nodes using this SA
+          example: 3
+        added_by:
+          type: string
+          format: email
+          example: alice@company.com
+        added_at:
+          $ref: "#/components/schemas/ISODateTime"
+
+    TestConnectionResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+          example: true
+        token_preview:
+          type: string
+          nullable: true
+          description: First 20 chars of the generated token (success only)
+          example: "ya29.c.b0AUBY..."
+        error:
+          type: string
+          nullable: true
+          description: Machine-readable error code (failure only)
+          example: permission_denied
+        message:
+          type: string
+          nullable: true
+          description: Human-readable error (failure only)
+          example: "generateAccessToken failed. Ensure DataKB's SA has roles/iam.serviceAccountTokenCreator."
+
+    # ── Resources ───────────────────────────────────────────────
+
+    Resource:
+      type: object
+      required: [id, name, type, display_name, config, has_password, added_by, added_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/UUID"
+        name:
+          type: string
+          description: Unique slug — used in kb_client calls and resource_bindings
+          example: payments-redis
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        display_name:
+          type: string
+          example: "Payments Redis (Memorystore)"
+        gcp_project:
+          $ref: "#/components/schemas/GCPProjectSummary"
+          nullable: true
+        service_account:
+          $ref: "#/components/schemas/ServiceAccountSummary"
+          nullable: true
+        config:
+          type: object
+          description: |
+            Type-specific connection config. Passwords are never included.
+            - `bigquery`: `{ "project": "...", "default_dataset": "..." }`
+            - `redis`: `{ "host": "...", "port": 6379, "tls": true }`
+            - `gcs`: `{ "bucket": "...", "prefix": "..." }`
+            - `http`: `{ "base_url": "...", "headers": {}, "auth_type": "bearer|basic|none" }`
+            - `tcp`: `{ "host": "...", "port": 5432 }`
+            - `custom`: arbitrary JSON
+          additionalProperties: true
+          example:
+            host: "10.0.0.5"
+            port: 6379
+            tls: true
+        has_password:
+          type: boolean
+          description: Whether a password or secret has been stored for this resource
+          example: true
+        node_count:
+          type: integer
+          example: 4
+        added_by:
+          type: string
+          format: email
+          example: alice@company.com
+        added_at:
+          $ref: "#/components/schemas/ISODateTime"
+
+    CreateResourceRequest:
+      type: object
+      required: [name, type, display_name, config]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+          pattern: "^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+          description: Unique slug used in kb_client
+          example: payments-redis
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          example: "Payments Redis (Memorystore)"
+        gcp_project_id:
+          $ref: "#/components/schemas/UUID"
+          nullable: true
+        sa_id:
+          $ref: "#/components/schemas/UUID"
+          nullable: true
+          description: SA used to access this resource (may differ from node-level SA)
+        config:
+          type: object
+          additionalProperties: true
+          example:
+            host: "10.0.0.5"
+            port: 6379
+            tls: true
+        password:
+          type: string
+          nullable: true
+          description: |
+            Stored in SECRETS_DIR — never returned by the API after creation.
+            Provide again in PUT to rotate.
+          example: "redis-auth-string"
+
+    UpdateResourceRequest:
+      type: object
+      description: All fields optional
+      properties:
+        display_name:
+          type: string
+        gcp_project_id:
+          $ref: "#/components/schemas/UUID"
+          nullable: true
+        sa_id:
+          $ref: "#/components/schemas/UUID"
+          nullable: true
+        config:
+          type: object
+          additionalProperties: true
+        password:
+          type: string
+          nullable: true
+          description: Provide to rotate; provide null to clear
+
+  # ── Shared Responses ────────────────────────────────────────
+
+  responses:
+
+    Unauthorized:
+      description: Missing or invalid JWT
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: unauthorized
+            message: "Missing or invalid authorization token."
+
+    Forbidden:
+      description: Authenticated but insufficient role
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: forbidden
+            message: "Your role does not permit this action."
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: not_found
+            message: "The requested resource was not found."
+
+    Conflict:
+      description: Conflict — duplicate name or concurrent notebook edit
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: "#/components/schemas/Error"
+              - $ref: "#/components/schemas/ConflictError"
+
+    UnprocessableEntity:
+      description: Request body validation failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: validation_error
+            message: "Request body is invalid."
+            details:
+              field: title
+              issue: "Field is required."
+
+    StorageUnavailable:
+      description: Storage backend unreachable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: storage_unavailable
+            message: "The notebook storage backend is unreachable."
+
+    CredentialError:
+      description: GCP credential generation failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: credential_error
+            message: "Failed to generate an access token. The key may be revoked."
+
+# ─────────────────────────────────────────────────────────────────
+# PATHS
+# ─────────────────────────────────────────────────────────────────
+
+paths:
+
+  # ════════════════════════════════════════
+  # HEALTH
+  # ════════════════════════════════════════
+
+  /api/health:
+    get:
+      tags: [health]
+      summary: Health check
+      description: Returns 200 if the app and DB are healthy.
+      security: []
+      operationId: health_check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, version]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                  version:
+                    type: string
+                    example: "1.0.0"
+                  db:
+                    type: string
+                    enum: [ok]
+                  jupyter_server:
+                    type: string
+                    enum: [ok, degraded, down]
+        "503":
+          description: Unhealthy — DB unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ════════════════════════════════════════
+  # AUTH
+  # ════════════════════════════════════════
+
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: Local login
+      description: |
+        Authenticate with email + password. Returns a JWT and sets the
+        `datakb_refresh` httpOnly cookie. Only available when AUTH_MODE=local.
+      security: []
+      operationId: auth_login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: "datakb_refresh=<token>; HttpOnly; SameSite=Strict; Max-Age=2592000"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: invalid_credentials
+                message: "Email or password is incorrect."
+        "403":
+          description: AUTH_MODE is not local
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: auth_mode_mismatch
+                message: "This instance uses Google OAuth. Use /api/auth/google."
+
+  /api/auth/google:
+    get:
+      tags: [auth]
+      summary: Initiate Google OAuth
+      description: Redirects browser to Google consent screen. Only available when AUTH_MODE=google.
+      security: []
+      operationId: auth_google_initiate
+      responses:
+        "302":
+          description: Redirect to Google OAuth
+          headers:
+            Location:
+              schema:
+                type: string
+        "403":
+          description: AUTH_MODE is not google
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/auth/callback:
+    get:
+      tags: [auth]
+      summary: Google OAuth callback
+      description: |
+        Handles the redirect from Google. Validates the OAuth code, creates
+        or updates the user record, issues a JWT, sets the refresh cookie,
+        and redirects to `/`.
+      security: []
+      operationId: auth_google_callback
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to `/` on success
+          headers:
+            Location:
+              schema:
+                type: string
+                example: "/"
+            Set-Cookie:
+              schema:
+                type: string
+        "403":
+          description: Google account domain not in GOOGLE_ALLOWED_DOMAIN
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: domain_not_allowed
+                message: "Only @company.com accounts are permitted."
+
+  /api/auth/refresh:
+    post:
+      tags: [auth]
+      summary: Refresh access token
+      description: |
+        Issues a new access token using the `datakb_refresh` httpOnly cookie.
+        Called automatically by the frontend on 401 responses.
+      security: []
+      operationId: auth_refresh
+      responses:
+        "200":
+          description: New token issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          description: Refresh token missing, invalid, or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: refresh_token_expired
+                message: "Refresh token has expired. Please log in again."
+
+  /api/auth/me:
+    get:
+      tags: [auth]
+      summary: Get current user
+      operationId: auth_me
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ════════════════════════════════════════
+  # GRAPH
+  # ════════════════════════════════════════
+
+  /api/graph:
+    get:
+      tags: [graph]
+      summary: Get full graph
+      description: |
+        Returns all non-archived nodes and all edges.
+        The `current_user_access` field on each node reflects the
+        requesting user's resolved access level.
+      operationId: graph_get
+      parameters:
+        - name: include_archived
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: team
+          in: query
+          schema:
+            type: string
+        - name: type
+          in: query
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/NodeType"
+          style: form
+          explode: true
+      responses:
+        "200":
+          description: Graph nodes and edges
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraphResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/nodes:
+    post:
+      tags: [graph]
+      summary: Create node
+      operationId: nodes_create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateNodeRequest"
+      responses:
+        "201":
+          description: Node created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: A node with this title already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: duplicate_title
+                message: "A node with title 'Auth Service Redis Cache' already exists."
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /api/nodes/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/UUID"
+
+    get:
+      tags: [graph]
+      summary: Get node
+      operationId: nodes_get
+      responses:
+        "200":
+          description: Node
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      tags: [graph]
+      summary: Update node
+      description: Partial update — only provided fields are changed.
+      operationId: nodes_update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNodeRequest"
+      responses:
+        "200":
+          description: Updated node
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+    delete:
+      tags: [graph]
+      summary: Archive node
+      description: |
+        Soft-deletes by setting `is_archived = true`. The notebook file
+        in storage is NOT deleted. Restore via PUT with `is_archived: false`.
+      operationId: nodes_archive
+      responses:
+        "204":
+          description: Node archived
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/edges:
+    post:
+      tags: [graph]
+      summary: Create edge
+      description: The (source_id, target_id, label) triple must be unique.
+      operationId: edges_create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEdgeRequest"
+      responses:
+        "201":
+          description: Edge created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Edge"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Source or target node not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Edge already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: duplicate_edge
+                message: "An edge with this source, target, and label already exists."
+
+  /api/edges/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/UUID"
+
+    delete:
+      tags: [graph]
+      summary: Delete edge
+      operationId: edges_delete
+      responses:
+        "204":
+          description: Edge deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ════════════════════════════════════════
+  # NOTEBOOKS
+  # ════════════════════════════════════════
+
+  /api/notebooks/{node_id}:
+    parameters:
+      - name: node_id
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/UUID"
+
+    get:
+      tags: [notebooks]
+      summary: Get notebook content
+      description: Fetches the current .ipynb JSON from the storage backend.
+      operationId: notebooks_get
+      responses:
+        "200":
+          description: Notebook content (nbformat v4 JSON)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotebookContent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Node not found or node has no notebook_path
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          $ref: "#/components/responses/StorageUnavailable"
+
+  /api/notebooks/{node_id}/autosave:
+    parameters:
+      - name: node_id
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/UUID"
+
+    put:
+      tags: [notebooks]
+      summary: Auto-save notebook
+      description: |
+        Overwrites the main notebook file in storage. Parses the first cell
+        as a metadata YAML block and syncs the node record if valid.
+
+        Conflict detection: include `client_updated_at` — the `updated_at`
+        timestamp the client last received. If the server's file is newer,
+        returns 409.
+      operationId: notebooks_autosave
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutosaveRequest"
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutosaveResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/StorageUnavailable"
+
+  /api/notebooks/{node_id}/snapshots:
+    parameters:
+      - name: node_id
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/UUID"
+
+    get:
+      tags: [notebooks]
+      summary: List named snapshots
+      description: Returns all named snapshots for this notebook, newest first.
+      operationId: notebooks_snapshots_list
+      responses:
+        "200":
+          description: Snapshots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Snapshot"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    post:
+      tags: [notebooks]
+      summary: Create named snapshot
+      description: |
+        Writes a named snapshot copy to the storage backend and records
+        it in the snapshots table.
+      operationId: notebooks_snapshots_create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSnapshotRequest"
+      responses:
+        "201":
+          description: Snapshot created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Snapshot"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/StorageUnavailable"
+
+  /api/notebooks/{node_id}/versions:
+    parameters:
+      - name: node_id
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/UUID"
+
+    get:
+      tags: [notebooks]
+      summary: List version history
+      description: |
+        Returns combined version history: named snapshots (from DB) and
+        autosave history (from storage native versioning), merged newest-first.
+      operationId: notebooks_versions_list
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: Version history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NotebookVersion"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/notebooks/{node_id}/versions/{version_id}:
+    parameters:
+      - name: node_id
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/UUID"
+      - name: version_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Version ID from the versions list endpoint
+
+    get:
+      tags: [notebooks]
+      summary: Get historical version content
+      description: |
+        Returns the .ipynb content of a specific historical version.
+        Does NOT restore — use POST /restore/{version_id} for that.
+      operationId: notebooks_versions_get
+      responses:
+        "200":
+          description: Historical notebook content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotebookContent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/StorageUnavailable"
+
+  /api/notebooks/{node_id}/restore/{version_id}:
+    parameters:
+      - name: node_id
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/UUID"
+      - name: version_id
+        in: path
+        required: true
+        schema:
+          type: string
+
+    post:
+      tags: [notebooks]
+      summary: Restore historical version
+      description: |
+        Restores the notebook to a historical version — writes the historical
+        content as the new current file. The restore itself appears as a new
+        entry in version history. Auto-generates a snapshot message:
+        `"Restored from version {version_id}"`.
+      operationId: notebooks_versions_restore
+      responses:
+        "200":
+          description: Restored — returns the restored notebook content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotebookContent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/StorageUnavailable"
+
+  # ════════════════════════════════════════
+  # KERNELS
+  # ════════════════════════════════════════
+
+  /api/kernels:
+    post:
+      tags: [kernels]
+      summary: Start kernel session
+      description: |
+        Starts a Jupyter kernel for the specified node with the node's
+        configured GCP credentials and resource bindings injected as
+        environment variables.
+
+        One active kernel per user per node is enforced — an existing
+        session is killed before starting the new one.
+
+        Returns 403 if the user's role is `viewer`.
+        Returns 500 with `credential_error` if SA token generation fails.
+        Returns 503 if Jupyter Server is not running.
+      operationId: kernels_start
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartKernelRequest"
+      responses:
+        "201":
+          description: Kernel started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KernelSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Node not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/CredentialError"
+        "503":
+          description: Jupyter Server is not running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: jupyter_unavailable
+                message: "The notebook execution engine is not running. Try again in a moment."
+
+  /api/kernels/{kernel_id}:
+    parameters:
+      - name: kernel_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Jupyter kernel UUID
+
+    get:
+      tags: [kernels]
+      summary: Get kernel status
+      description: |
+        Returns the current status of a kernel. The calling user must
+        own this kernel session (or be an admin).
+      operationId: kernels_status
+      responses:
+        "200":
+          description: Kernel status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KernelStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      tags: [kernels]
+      summary: Stop kernel session
+      description: |
+        Stops and destroys a kernel. The calling user must own this
+        kernel session (or be an admin).
+      operationId: kernels_stop
+      responses:
+        "204":
+          description: Kernel stopped
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/kernels/{kernel_id}/channels:
+    parameters:
+      - name: kernel_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: token
+        in: query
+        required: true
+        schema:
+          type: string
+        description: |
+          JWT passed as query parameter — WebSocket connections cannot
+          set Authorization headers in most browsers.
+
+    get:
+      tags: [kernels]
+      summary: Kernel WebSocket channel (upgrade)
+      description: |
+        **WebSocket endpoint.** Proxies the Jupyter Messaging Protocol
+        between the browser and the internal Jupyter Server.
+
+        Established only if:
+        - `token` query param is a valid JWT
+        - JWT's user owns the specified kernel session
+        - Kernel is currently active
+
+        All Jupyter message types are forwarded transparently
+        (execute_request, kernel_info_request, interrupt_request, etc.).
+
+        Server closes the connection when:
+        - Kernel is stopped via DELETE /api/kernels/{id}
+        - Kernel dies (OOM, crash)
+        - Idle timeout is reached
+
+        A `datakb.kernel.idle_warning` shell message is sent 2 minutes
+        before idle shutdown as a custom protocol extension.
+      operationId: kernels_channels_ws
+      responses:
+        "101":
+          description: WebSocket upgrade successful
+        "401":
+          description: Invalid or missing token
+        "403":
+          description: Token valid but user does not own this kernel
+        "404":
+          description: Kernel not found or inactive
+
+  # ════════════════════════════════════════
+  # GCP CONFIGURATION
+  # ════════════════════════════════════════
+
+  /api/gcp/projects:
+    get:
+      tags: [gcp]
+      summary: List GCP projects
+      description: Admin only.
+      operationId: gcp_projects_list
+      responses:
+        "200":
+          description: GCP projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GCPProject"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+    post:
+      tags: [gcp]
+      summary: Add GCP project
+      description: |
+        Registers a GCP project. No GCP API calls are made — this only
+        records the project ID. Add Service Accounts separately.
+      operationId: gcp_projects_create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGCPProjectRequest"
+      responses:
+        "201":
+          description: GCP project registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GCPProject"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Project ID already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: duplicate_project
+                message: "GCP project 'payments-prod' is already registered."
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /api/gcp/projects/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/UUID"
+
+    delete:
+      tags: [gcp]
+      summary: Remove GCP project
+      description: Fails if any SAs or nodes still reference this project.
+      operationId: gcp_projects_delete
+      responses:
+        "204":
+          description: GCP project removed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Project is still referenced
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: project_in_use
+                message: "Cannot remove: 2 service accounts and 5 nodes still reference it."
+
+  /api/gcp/projects/{id}/service-accounts:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/UUID"
+        description: GCP project UUID
+
+    get:
+      tags: [gcp]
+      summary: List Service Accounts
+      description: Returns SAs configured under the specified project. Admin only.
+      operationId: gcp_sa_list
+      responses:
+        "200":
+          description: Service Accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ServiceAccount"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    post:
+      tags: [gcp]
+      summary: Add Service Account
+      description: |
+        Adds a Service Account to a project.
+
+        **Key file upload:** `multipart/form-data` with a `data` part
+        (SA metadata JSON string) and a `key_file` part (binary SA key JSON).
+
+        **Workload Identity:** `application/json` with SA metadata only.
+
+        Key files are stored at `SECRETS_DIR/{uuid}.json` — never returned
+        by any API endpoint.
+      operationId: gcp_sa_create
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  type: string
+                  description: |
+                    JSON string: `{"sa_email":"...","display_name":"...","credential_type":"key_file"}`
+                  example: '{"sa_email":"platform-sa@payments-prod.iam.gserviceaccount.com","display_name":"Platform SA","credential_type":"key_file"}'
+                key_file:
+                  type: string
+                  format: binary
+                  description: SA JSON key file (required when credential_type is key_file)
+          application/json:
+            schema:
+              type: object
+              required: [sa_email, display_name, credential_type]
+              properties:
+                sa_email:
+                  type: string
+                  example: platform-sa@payments-prod.iam.gserviceaccount.com
+                display_name:
+                  type: string
+                  example: "Platform SA"
+                credential_type:
+                  type: string
+                  enum: [workload_identity]
+      responses:
+        "201":
+          description: Service Account added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAccount"
+        "400":
+          description: Key file missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: invalid_key_file
+                message: "The uploaded file is not a valid GCP service account key JSON."
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: GCP project not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: SA already registered for this project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/gcp/service-accounts/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/UUID"
+
+    delete:
+      tags: [gcp]
+      summary: Remove Service Account
+      description: |
+        Removes SA registration and deletes the key file from SECRETS_DIR
+        if present. Fails if any nodes still reference this SA.
+      operationId: gcp_sa_delete
+      responses:
+        "204":
+          description: Service Account removed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: SA still referenced by nodes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: sa_in_use
+                message: "Cannot remove: 3 nodes still reference this SA."
+
+  /api/gcp/service-accounts/{id}/test:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/UUID"
+
+    post:
+      tags: [gcp]
+      summary: Test SA connection
+      description: |
+        Attempts to generate a short-lived access token for this SA.
+        Always returns 200 — success/failure is in the response body.
+      operationId: gcp_sa_test
+      responses:
+        "200":
+          description: Test result (check the `success` field)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestConnectionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ════════════════════════════════════════
+  # RESOURCES
+  # ════════════════════════════════════════
+
+  /api/resources:
+    get:
+      tags: [resources]
+      summary: List resources
+      description: Admin only. Passwords are never included in responses.
+      operationId: resources_list
+      responses:
+        "200":
+          description: Resources
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Resource"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+    post:
+      tags: [resources]
+      summary: Add resource
+      description: |
+        Adds a named resource. The `password` field is stored in
+        SECRETS_DIR and never returned by GET endpoints.
+      operationId: resources_create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateResourceRequest"
+      responses:
+        "201":
+          description: Resource created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Resource"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Resource name already in use
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: duplicate_resource
+                message: "A resource named 'payments-redis' already exists."
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /api/resources/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/UUID"
+
+    get:
+      tags: [resources]
+      summary: Get resource
+      description: Admin only.
+      operationId: resources_get
+      responses:
+        "200":
+          description: Resource
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Resource"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      tags: [resources]
+      summary: Update resource
+      description: |
+        Partial update. To rotate a password provide a new string value.
+        To clear it provide `null`.
+      operationId: resources_update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateResourceRequest"
+      responses:
+        "200":
+          description: Updated resource
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Resource"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+    delete:
+      tags: [resources]
+      summary: Delete resource
+      description: |
+        Deletes the resource and its password file (if any). Nodes that
+        reference this resource in `resource_bindings` have it silently
+        removed on next kernel start.
+      operationId: resources_delete
+      responses:
+        "204":
+          description: Resource deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ════════════════════════════════════════
+  # USERS
+  # ════════════════════════════════════════
+
+  /api/users:
+    get:
+      tags: [users]
+      summary: List users
+      description: Admin only.
+      operationId: users_list
+      parameters:
+        - name: role
+          in: query
+          schema:
+            $ref: "#/components/schemas/UserRole"
+        - name: team
+          in: query
+          schema:
+            type: string
+        - name: include_inactive
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/users/invite:
+    post:
+      tags: [users]
+      summary: Invite user
+      description: |
+        Creates a user and sends a one-time password-setup link.
+        Available in AUTH_MODE=local only. In Google auth mode, user
+        records are auto-created on first login.
+      operationId: users_invite
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InviteUserRequest"
+      responses:
+        "201":
+          description: Invitation sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: duplicate_email
+                message: "A user with this email is already registered."
+
+  /api/users/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/UUID"
+
+    put:
+      tags: [users]
+      summary: Update user
+      description: |
+        Updates role, team, display name, or active status.
+        An admin cannot demote themselves — at least one admin must remain.
+      operationId: users_update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Cannot demote the last admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: last_admin
+                message: "Cannot change role: this is the last admin account."
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
