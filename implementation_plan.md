@@ -292,6 +292,3 @@
 | `references/spec.md` | Full system specification v4 (canonical) |
 | `references/openapi.yaml` | OpenAPI 3.1 spec — all 39 endpoints, 39 schemas |
 | `references/ui-design.html` | Interactive UI design — open in browser |
-| `references/spec-v1.md` | Initial spec (superseded) |
-| `references/spec-v2.md` | v2 spec (superseded) |
-| `references/spec-v3.md` | v3 spec (superseded) |
