@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from alembic import command
@@ -5,23 +7,27 @@ from alembic.config import Config as AlembicConfig
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from db.engine import async_session_factory, engine
 from routers import auth, graph, health, setup
-
-import logging
 
 logging.basicConfig(level="INFO")
 logger = logging.getLogger(__name__)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Run Alembic migrations on startup
-    logger.info("Running database migrations...")
+def _run_migrations() -> None:
+    """Run Alembic migrations synchronously (called from a thread executor)."""
     alembic_cfg = AlembicConfig("alembic.ini")
     command.upgrade(alembic_cfg, "head")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Run migrations in a thread so asyncio.run() inside env.py doesn't conflict
+    # with the already-running uvicorn event loop.
+    logger.info("Running database migrations...")
+    await asyncio.get_event_loop().run_in_executor(None, _run_migrations)
     logger.info("Migrations complete.")
 
     # Check if any users exist — if not, set first-run flag

@@ -1,8 +1,15 @@
 .PHONY: dev dev-docker test test-fe lint build db-migrate db-reset gen-api
 
+DATA_DIR ?= /tmp/datakb
+
 dev:
 	@echo "Starting backend and frontend in watch mode..."
-	@(cd backend && uvicorn main:app --reload --port 8000) & \
+	@mkdir -p $(DATA_DIR)/data $(DATA_DIR)/content $(DATA_DIR)/secrets
+	@export DATABASE_URL="sqlite+aiosqlite:///$(DATA_DIR)/data/datakb.db" && \
+	export STORAGE_LOCAL_PATH="$(DATA_DIR)/content" && \
+	export SECRETS_DIR="$(DATA_DIR)/secrets" && \
+	export DATAKB_SECRET_KEY="dev-secret-key-not-for-production" && \
+	(cd backend && uvicorn main:app --reload --port 8000) & \
 	(cd frontend && npm run dev) & \
 	wait
 
